@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/Api/">
+    <Project Path="src/Api/Amrod.OrderManagement.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Worker/">
+    <Project Path="src/Worker/Amrod.OrderManagement.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/Api.IntegrationTests/">
+    <Project Path="tests/Api.IntegrationTests/Amrod.OrderManagement.Api.IntegrationTests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Api.UnitTests/">
+    <Project Path="tests/Api.UnitTests/Amrod.OrderManagement.Api.UnitTests.csproj" />
+  </Folder>
+</Solution>

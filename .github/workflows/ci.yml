@@ -1,0 +1,171 @@
+name: Amrod Order Management CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend Build and Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore dependencies
+        run: dotnet restore Amrod.OrderManagement.slnx
+
+      - name: Build solution
+        run: >
+          dotnet build Amrod.OrderManagement.slnx
+          --configuration Release
+          --no-restore
+
+      - name: Run backend tests
+        run: >
+          dotnet test Amrod.OrderManagement.slnx
+          --configuration Release
+          --no-build
+          --verbosity normal
+
+  frontend:
+    name: Frontend Build and Tests
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: src/frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend tests
+        run: npm test -- --run
+
+      - name: Build frontend
+        run: npm run build
+
+  migrations:
+    name: Database Migration Validation
+    runs-on: ubuntu-latest
+
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "Amrod_CI_SqlServer_2026!"
+
+        ports:
+          - 1433:1433
+
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd
+          -S localhost
+          -U sa
+          -P 'Amrod_CI_SqlServer_2026!'
+          -C
+          -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 20s
+
+    env:
+      ASPNETCORE_ENVIRONMENT: Testing
+      ConnectionStrings__DefaultConnection: >-
+        Server=localhost,1433;
+        Database=AmrodOrderManagementCI;
+        User Id=sa;
+        Password=Amrod_CI_SqlServer_2026!;
+        TrustServerCertificate=True;
+        MultipleActiveResultSets=True
+      Jwt__Key: "Amrod-CI-JWT-Key-2026-Minimum-32-Characters!"
+      Jwt__Issuer: "Amrod.OrderManagement"
+      Jwt__Audience: "Amrod.OrderManagement.Client"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install EF Core CLI
+        run: >
+          dotnet tool install
+          --global dotnet-ef
+          --version 8.*
+
+      - name: Restore API dependencies
+        run: >
+          dotnet restore
+          src/Api/Amrod.OrderManagement.Api.csproj
+
+      - name: Build API
+        run: >
+          dotnet build
+          src/Api/Amrod.OrderManagement.Api.csproj
+          --configuration Release
+          --no-restore
+
+      - name: Apply migrations to empty database
+        run: >
+          dotnet ef database update
+          --project src/Api/Amrod.OrderManagement.Api.csproj
+          --startup-project src/Api/Amrod.OrderManagement.Api.csproj
+          --configuration Release
+          --no-build
+
+      - name: Generate idempotent migration SQL
+        run: >
+          dotnet ef migrations script
+          --idempotent
+          --project src/Api/Amrod.OrderManagement.Api.csproj
+          --startup-project src/Api/Amrod.OrderManagement.Api.csproj
+          --configuration Release
+          --no-build
+          --output migration.sql
+
+      - name: Verify migration SQL was generated
+        shell: bash
+        run: |
+          test -s migration.sql
+          echo "Migration SQL generated successfully."
+          wc -l migration.sql
+
+      - name: Upload migration SQL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-sql
+          path: migration.sql
+          if-no-files-found: error
